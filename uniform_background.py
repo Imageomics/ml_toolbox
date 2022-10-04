@@ -6,9 +6,10 @@ from PIL import Image
 
 def get_args():
     parser = ArgumentParser()
-    parser.add_argument("--dataset", type=str, default="/local/scratch/datasets/butterflies")
-    parser.add_argument("--output", type=str, default="/local/scratch/datasets/butterflies_norm")
+    parser.add_argument("--dataset", type=str, default="data/Cuthill_GoldStandard")
+    parser.add_argument("--output", type=str, default="data/norm_background")
     parser.add_argument("--background_color", type=str, nargs='+', action='append', default=[210,210,210])
+    parser.add_argument("--img_path", type=str, default=None)
 
     args = parser.parse_args()
     assert len(args.background_color) == 3, "Must provide an RGB color of length 3 for each channel."
@@ -19,9 +20,9 @@ def get_args():
 def dist(a, b):
     return np.sqrt(((a - b) ** 2).sum())
 
-def region_growing_mask(path, thresh=3):
+def region_growing_mask(path, thresh=3, query_points=None):
     """
-    NOTE: the 'visited' variable contain the starting points for the region growing algorithm.
+    NOTE: the 'visited'/'query_points' variable contain the starting points for the region growing algorithm.
           Currently, the four corners are used (for most butterfly image from Cuthil this is okay).
           Modify the variable as needed.
 
@@ -33,8 +34,17 @@ def region_growing_mask(path, thresh=3):
     """
     img = np.array(Image.open(path))
     h, w = img.shape[:2]
-    visited = ["0_0", f"0_{w-1}", f"{h-1}_{w-1}", f"{h-1}_0"] #! STARTING POINTS
-    queue = [(0, 0, img[0, 0]), (0, w-1, img[0, w-1]), (h-1, w-1, img[h-1, w-1]), (h-1, 0, img[h-1, 0])]
+    #! STARTING POINTS
+    if query_points is None:
+        visited = ["0_0", f"0_{w-1}", f"0_{w//2}", f"{h-1}_{w-1}", f"{h-1}_0"] 
+    else:
+        visited = query_points
+    queue = []
+    for p in visited:
+        y, x = p.split("_")
+        x = int(x)
+        y = int(y)
+        queue.append((y, x, img[y, x]))
     background = np.ones_like(img[:, :, 0]).astype(np.uint8)
     background[0,0] = 0
     background[0,w-1] = 0
@@ -64,17 +74,27 @@ def region_growing_mask(path, thresh=3):
 
     return background
 
+def make_image_background_uniform(path, outdir, background_color=[210, 210, 210]):
+    start_img = Image.open(path)
+    mask = region_growing_mask(path)
+    new_image = np.array(start_img)
+    new_image[mask == 0] = np.array(background_color)
+    fname = path.split(os.path.sep)[-1]
+    Image.fromarray(new_image).save(os.path.join(outdir, fname.split(".")[0] + '.png'))
+
 def uniform_background(dataset, output, background_color=[210, 210, 210]):
     os.makedirs(output, exist_ok=False)
     for root, _, files in os.walk(dataset):
         for f in files:
+            if f.split('.')[-1].lower() not in ["png", "tif", "jpeg", "jpg"]: continue
             path = os.path.join(root, f)
-            start_img = Image.open(path)
-            mask = region_growing_mask(path)
-            new_image = np.array(start_img)
-            new_image[mask == 0] = np.array(background_color)
+            make_image_background_uniform(path, output, background_color)
 
 if __name__ == "__main__":
     args = get_args()
-    uniform_background(args.dataset, args.output, args.background_color)
+    if args.img_path is None:
+        uniform_background(args.dataset, args.output, args.background_color)
+    else:
+        output_dir = os.path.sep.join(args.img_path.split(os.path.sep)[:-2])
+        make_image_background_uniform(args.img_path, output_dir, args.background_color)
 
