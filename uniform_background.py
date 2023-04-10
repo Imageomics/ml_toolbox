@@ -40,16 +40,13 @@ def region_growing_mask(path, thresh=3, query_points=None):
     else:
         visited = query_points
     queue = []
+    background = np.ones_like(img[:, :, 0]).astype(np.uint8)
     for p in visited:
         y, x = p.split("_")
         x = int(x)
         y = int(y)
         queue.append((y, x, img[y, x]))
-    background = np.ones_like(img[:, :, 0]).astype(np.uint8)
-    background[0,0] = 0
-    background[0,w-1] = 0
-    background[h-1,w-1] = 0
-    background[h-1,0] = 0
+        background[y,x] = 0
     i = 0
 
     def get_neighbor_points(row, col):
